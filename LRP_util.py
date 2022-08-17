@@ -9,7 +9,7 @@ def preprocess_image(img):
     means = [0.485, 0.456, 0.406]
     stds = [0.229, 0.224, 0.225]
 
-    preprocessed_img = img.copy()[:, :, ::-1]
+    preprocessed_img = img.copy()#[:, :, ::-1]
     for i in range(3):
         preprocessed_img[:, :, i] = preprocessed_img[:, :, i] - means[i]
         preprocessed_img[:, :, i] = preprocessed_img[:, :, i] / stds[i]
@@ -19,6 +19,16 @@ def preprocess_image(img):
     preprocessed_img.unsqueeze_(0)
     input = preprocessed_img.requires_grad_(True)
     return input
+
+def preprocess_numpy(img):
+    means = [0.485, 0.456, 0.406]
+    stds = [0.229, 0.224, 0.225]
+
+    preprocessed_img = img.copy()#[:, :, ::-1]
+    for i in range(3):
+        preprocessed_img[:, :, i] = preprocessed_img[:, :, i] - means[i]
+        preprocessed_img[:, :, i] = preprocessed_img[:, :, i] / stds[i]
+    return preprocessed_img
 
 
 def normalize(Ac):

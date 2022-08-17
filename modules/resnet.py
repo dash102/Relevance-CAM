@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
+import torch.nn.functional as F
 
 from modules.layers import *
 import torch
@@ -287,9 +288,24 @@ class ResNet(nn.Module):
             R[i, maxindex[i]] = 1
         return R
 
-    def forward(self, x, mode='output', target_class = [None]):
+    def upsample(self, source, guidance_unscaled, upsampler, scale):
+        _, _, H, W = source.shape
+        guidance = F.interpolate(guidance_unscaled, size=(H * scale, W * scale), mode='bilinear', antialias=True)
+        return upsampler(source, guidance)
 
-        x = self.conv1(x)
+    def forward_comparison(self, inp):
+        x = self.conv1(inp)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        layer1 = self.layer1(x)
+        layer2 = self.layer2(layer1)
+        return layer2
+
+    def forward(self, inp, mode='output', target_class = [None], upsampler=None, scale=1):
+
+        x = self.conv1(inp)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
@@ -298,6 +314,76 @@ class ResNet(nn.Module):
         layer2 = self.layer2(layer1)
         layer3 = self.layer3(layer2)
         layer4 = self.layer4(layer3)
+
+        # ---------------------------------------------------------------------- BREAKPOINT CODE
+        # import matplotlib.pyplot as plt
+        # from utils.util import feature_pca
+        # from models.jbuparam_model import PlainGuidedUpsampler
+        # from utils.metrics import mean_cosine_distance
+        #
+        # def post(x):
+        #     return x[0].permute(1, 2, 0).detach().cpu()
+        #
+        # def forward_comparison(self, inp):
+        #     x = self.conv1(inp)
+        #     x = self.bn1(x)
+        #     x = self.relu(x)
+        #     x = self.maxpool(x)
+        #
+        #     layer1 = self.layer1(x)
+        #     layer2 = self.layer2(layer1)
+        #     return layer2
+        #
+        # _, _, H, W = layer2.shape
+        # guidance = F.interpolate(inp, size=(H * scale, W * scale), mode='bilinear')
+        #
+        # inp_scaled = F.interpolate(inp, scale_factor=2, mode='bilinear')
+        # comp = self.forward_comparison(inp_scaled)
+        #
+        # radius = 2
+        # sigma_spatial = 0.75
+        # sigma_range_factor = 1.0
+        # sigma_range = torch.std(guidance, dim=(1, 2, 3)) * sigma_range_factor
+        #
+        # upsampler = PlainGuidedUpsampler(radius=radius, sigma_spatial=sigma_spatial, sigma_range=sigma_range)
+        #
+        # upsampled = upsampler(layer2, guidance)
+        # bilinear = F.interpolate(layer2, scale_factor=2, mode='bilinear')
+        #
+        # f, ax = plt.subplots(1, 6, figsize=(7, 3))
+        # ax[0].set_title(
+        #     f'radius: {radius} \n  sigma_spatial: {sigma_spatial} \n  sigma_range_factor: {sigma_range_factor}')
+        # for i in range(6):
+        #     ax[i].set_axis_off()
+        # ax[0].imshow(post(inp))
+        # ax[1].imshow(feature_pca(layer2)[0])
+        # ax[2].imshow(post(guidance))
+        # ax[3].set_title(mean_cosine_distance(upsampled, comp).item())
+        # ax[3].imshow(feature_pca(upsampled)[0])
+        # ax[4].set_title(mean_cosine_distance(bilinear, comp).item())
+        # ax[4].imshow(feature_pca(bilinear)[0])
+        # ax[5].imshow(feature_pca(comp)[0])
+        # plt.show()
+        # ---------------------------------------------------------------------- BREAKPOINT CODE
+
+        if upsampler is not None:
+            if mode == 'layer2':
+                layer2 = self.upsample(layer2, inp, upsampler, scale)
+            elif mode == 'layer4':
+                if upsampler.hparams.learn_guidance:
+                    _, _, H, W = layer4.shape
+                    guidance_features, source = upsampler.featurizer(inp)
+                    guidance = torch.cat(guidance_features, 1)
+                    inp_scaled = F.interpolate(inp, size=(H * scale, W * scale), mode='bilinear', antialias=True)
+                    guidance = upsampler.guidance_model(torch.cat([inp_scaled, guidance], dim=1))
+                    layer4 = self.upsample(layer4, guidance, upsampler, scale)
+                else:
+                    layer4 = self.upsample(layer4, inp, upsampler, scale)
+            elif mode == 'layer3':
+                layer3 = self.upsample(layer3, inp, upsampler, scale)
+            else:
+                raise ValueError(f'{mode} is not a valid mode')
+
 
         x = self.avgpool(layer4)
         x = x.view(x.size(0), -1)

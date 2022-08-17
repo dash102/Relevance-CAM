@@ -1,4 +1,6 @@
+import copy
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 import torch
 from modules.layers import *
@@ -117,7 +119,13 @@ class VGG(nn.Module):
             R[i, maxindex[i]] = 1
         return R
 
-    def forward(self, x,mode='output', target_class = [None]):
+    def upsample(self, source, guidance_unscaled, upsampler, scale):
+        _, _, H, W = source.shape
+        guidance = F.interpolate(guidance_unscaled, size=(H * scale, W * scale), mode='bilinear')
+        return upsampler(source, guidance)
+
+    def forward(self, x,mode='output', target_class = [None], upsampler=None, scale=1):
+        inp = copy.deepcopy(x)
         for i, layer in enumerate(self.features):
             x = layer(x)
             if mode.lstrip('-').isnumeric():
@@ -138,6 +146,9 @@ class VGG(nn.Module):
 
         for i in range(len(self.features)-1, int(mode), -1):
             R = self.features[i].relprop(R)
+
+        if upsampler is not None:
+            target_layer = self.upsample(target_layer, inp, upsampler, scale)
 
         r_weight = torch.mean(R, dim=(2, 3), keepdim=True)
         r_cam = target_layer * r_weight

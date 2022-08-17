@@ -26,6 +26,8 @@ parser.add_argument('--target_layer', type=str, default='layer2',
                     help='target_layer')
 parser.add_argument('--target_class', type=int, default=None,
                     help='target_class')
+parser.add_argument('--seed', type=int, default=0,
+                    help='seed')
 args = parser.parse_args()
 
 # define data loader
